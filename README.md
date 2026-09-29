@@ -26,6 +26,25 @@ To resolve this issue:
     Add changes to git using this command: git add .
 	Commit changes using this command: git commit -m "some message"
  
+## Quick start (main branch)
+
+```bash
+pip install -r requirements.txt
+docker compose up -d                 # PostgreSQL + pgvector (or use the devcontainer)
+bash b_01_install_llama.sh           # Ollama + qwen3:0.6b (skipped in the devcontainer, post-create.sh does it)
+
+python b_04_generate_corpus.py       # download Wikipedia articles into ./all_articles
+python c_04_populate_vector_db.py    # sentence embeddings -> pgvector (re-runnable, skips finished files)
+python d_05_run_rag.py "Is the Dominican Republic a member of the United Nations?"
+```
+
+Settings (database URL, embedding model, chat model) live in `rag_config.py` and can be overridden with the
+`DATABASE_URL`, `EMBEDDING_MODEL` and `CHAT_MODEL` environment variables.
+
+Tests: `pytest tests` (window logic and prompt helpers). To include the SQL tests, point `TEST_DATABASE_URL`
+at a scratch pgvector database, e.g. `postgresql+psycopg2://postgres:postgres@localhost/text_embeddings_test`
+(the test drops and recreates the `text_embeddings` table in that database).
+
 ## Instructor
 
 Dr. Alaa Moussawi

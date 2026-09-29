@@ -1,145 +1,99 @@
 import sys
 import gc
 from c_03_database_connect_embeddings import get_psql_session, TextEmbedding
-from c_05_pull_db_content import search_embeddings, get_surrounding_sentences
-from sentence_transformers import SentenceTransformer
+from c_05_pull_db_content import search_embeddings
+from rag_config import load_embedding_model, encode_query
 
-# Identify how many search results till we have 5 matches that generate non-overlapping windows.
+# Search results are (id, sentence_number, content, file_name, distance) rows.
+SENTENCE_NUMBER = 1
+FILE_NAME = 3
 
-# Check if a matches context window overlaps with another matches context window.
+
+# Check if a match's context window overlaps with the context window of an already accepted match.
+# Two windows of +-group_window_size sentences overlap when the matches are at most 2 * group_window_size apart.
 def is_unique_to_window(existing_matches, current_match, group_window_size=5):
-    
+
     for match in existing_matches:
-        if match[3] != current_match[3]:
+        if match[FILE_NAME] != current_match[FILE_NAME]:
             continue
-        if match[1] > current_match[1] + group_window_size or match[1] < current_match[1] - group_window_size:
-            continue
-        else:
+        if abs(match[SENTENCE_NUMBER] - current_match[SENTENCE_NUMBER]) <= 2 * group_window_size:
             return False
-    
+
     return True
 
-# Getting unique matches from search results
-def get_filtered_matches(search_results):
-    unique_count = 0
+
+# Walk the ranked search results and keep the best matches whose context windows do not overlap.
+def get_filtered_matches(search_results, num_matches=5, group_window_size=5):
     matches = []
     for result in search_results:
-
-        if unique_count >= 5:
-            break;
-        if is_unique_to_window(matches, result):
-            unique_count += 1
-            
-        matches.append(result)
+        if len(matches) >= num_matches:
+            break
+        if is_unique_to_window(matches, result, group_window_size):
+            matches.append(result)
 
     return matches
 
-def group_entries(entry_ids, file_names, index_of_interest, group_window_size):
 
-    # Identify if an entry with index index_of_interest needs grouping with other entries.
+# Turn matches into (file_name, first_sentence, last_sentence) windows and merge the ones that touch.
+def merge_windows(file_names, sentence_numbers, group_window_size):
+    windows = sorted(
+        (file_name, max(1, number - group_window_size), number + group_window_size)
+        for file_name, number in zip(file_names, sentence_numbers)
+    )
 
-    # If it needs no grouping, return an array with just its index (will be handled as in get_surrounding_sentences) 
-    # If it needs grouping with one or more entries, return array of indices of those entries.
+    merged = []
+    for file_name, start, end in windows:
+        if merged and merged[-1][0] == file_name and start <= merged[-1][2] + 1:
+            merged[-1] = (file_name, merged[-1][1], max(merged[-1][2], end))
+        else:
+            merged.append((file_name, start, end))
 
-    entry_id_of_interest = entry_ids[index_of_interest]
-    file_name_of_interest = file_names[index_of_interest]
+    return merged
 
-    group_idxs = [index_of_interest]
 
-    for idx, (entry_id, file_name) in enumerate(zip(entry_ids, file_names)):
-        if file_name != file_name_of_interest:
-            continue;
-        if (entry_id >= entry_id_of_interest - group_window_size) and (entry_id <= entry_id_of_interest + group_window_size):
-            group_idxs.append(idx)
+def get_surrounding_sentences(file_names, sentence_numbers, group_window_size, session):
 
-    return group_idxs
-
-def consolidate_groupings(grouped_entries):
-    # Given a list of lists with grouped entries, combine all lists that have one or more elements in common, then remove duplicates.
-    # This should result in a number of lists equal to the number of matched contexts we want
-
-    # Assumes we have run the function group_entries on each entry
-
-    original_groups = grouped_entries[:]
-    combined_groups = []
-
-    while( len(original_groups) ):
-        current_grouping = original_groups[0][:]
-        original_groups.remove(original_groups[0])
-        for other_entry in original_groups:
-            for idx in current_grouping:
-                if idx in other_entry:
-                    current_grouping += other_entry
-                    original_groups.remove(other_entry)
-                    break;
-        
-        current_grouping = list(set(current_grouping))
-        combined_groups.append(current_grouping)
-
-    return combined_groups
-
-def get_min_max_ids(entry_ids, file_names, combined_groups, group_window_size):
-
-    min_ids = []
-    max_ids = []
-
-    for group in combined_groups:
-        min_id = min([entry_ids[i] for i in group])
-        max_id = max([entry_ids[i] for i in group])
-
-        min_id = min_id - group_window_size
-        max_id = max_id + group_window_size
-
-        min_ids.append(min_id)
-        max_ids.append(max_id)
-
-    return min_ids, max_ids
-
-def get_surrounding_sentences(entry_ids, file_names, group_window_size, session):
-
-    grouped_entries = []
-    for idx, id in enumerate(entry_ids):
-        grouped_entries.append(group_entries(entry_ids, file_names, index_of_interest = idx, group_window_size = group_window_size))
-
-    combined_groups = consolidate_groupings(grouped_entries)
-    min_ids, max_ids = get_min_max_ids(entry_ids, file_names, combined_groups, group_window_size)
     surrounding_sentences = []
-
-    for min_id, max_id in zip(min_ids, max_ids):
+    for file_name, start, end in merge_windows(file_names, sentence_numbers, group_window_size):
         surrounding_sentences.append(
             session.query(TextEmbedding.id, TextEmbedding.sentence_number, TextEmbedding.content, TextEmbedding.file_name)\
-            .filter(TextEmbedding.id >= min_id)\
-            .filter(TextEmbedding.id <= max_id)\
+            .filter(TextEmbedding.file_name == file_name)\
+            .filter(TextEmbedding.sentence_number >= start)\
+            .filter(TextEmbedding.sentence_number <= end)\
+            .order_by(TextEmbedding.sentence_number)\
             .all()
         )
-    
+
     return surrounding_sentences
+
 
 def search_by_query(query, num_matches=5, group_window_size=5):
 
     session = get_psql_session()
-    model = SentenceTransformer('SFR-Embedding-Mistral', device='cpu')
-    query_embedding = model.encode(query)
+    model = load_embedding_model()
+    query_embedding = encode_query(model, query)
     del model
     gc.collect()
 
+    # Fetch extra candidates so that we can still find num_matches non-overlapping windows
     search_results = search_embeddings(query_embedding, session=session, limit=num_matches * (2*group_window_size + 1) )
-    filtered_matches = get_filtered_matches(search_results)
+    filtered_matches = get_filtered_matches(search_results, num_matches, group_window_size)
 
-    entry_ids = [i[0] for i in filtered_matches]
-    file_names = [i[3] for i in filtered_matches]
+    file_names = [m[FILE_NAME] for m in filtered_matches]
+    sentence_numbers = [m[SENTENCE_NUMBER] for m in filtered_matches]
 
-    return get_surrounding_sentences(entry_ids=entry_ids, file_names=file_names, group_window_size=group_window_size, session=session)
+    return get_surrounding_sentences(file_names=file_names, sentence_numbers=sentence_numbers,
+                                     group_window_size=group_window_size, session=session)
 
 
 if __name__=="__main__":
 
     query = "Tell me about children's rights in Germany."
-    
+
     if len(sys.argv) > 1:
         query = sys.argv[1]
 
     context = search_by_query(query)
 
-    for i in context:
-        print(i, "\n")
+    for window in context:
+        print(window, "\n")

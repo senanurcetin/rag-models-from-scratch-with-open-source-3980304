@@ -11,14 +11,11 @@
       }
     }
   },
-  "containerEnv": {
-    "HF_USERNAME": "${HF_USERNAME}",
-    "HF_TOKEN": "${HF_TOKEN}"
-  },
-  "postCreateCommand": "echo 'DEBUG: HF_USERNAME=' $HF_USERNAME && echo 'DEBUG: HF_TOKEN is set' && bash /usr/local/bin/download-model.sh",
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "postStartCommand": "bash .devcontainer/post-create.sh services",
   "remoteUser": "vscode",
-  "forwardPorts": [5432],
+  "forwardPorts": [5432, 11434],
   "mounts": [
-    "source=models-cache,target=/models,type=volume"
+    "source=hf-cache,target=/home/vscode/.cache/huggingface,type=volume"
   ]
 }
