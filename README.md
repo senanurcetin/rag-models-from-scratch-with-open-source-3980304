@@ -41,6 +41,10 @@ python d_05_run_rag.py "Is the Dominican Republic a member of the United Nations
 Settings (database URL, embedding model, chat model) live in `rag_config.py` and can be overridden with the
 `DATABASE_URL`, `EMBEDDING_MODEL` and `CHAT_MODEL` environment variables.
 
+Retrieval quality: edit `eval_set.json` (question -> expected article file) and run `python eval_retrieval.py eval_set.json 5`
+to get hit@k and MRR. Use it to compare chunk/window sizes or embedding models. The bundled questions assume the
+default "human rights" corpus; questions whose article is not in the database are skipped.
+
 Tests: `pytest tests` (window logic and prompt helpers). To include the SQL tests, point `TEST_DATABASE_URL`
 at a scratch pgvector database, e.g. `postgresql+psycopg2://postgres:postgres@localhost/text_embeddings_test`
 (the test drops and recreates the `text_embeddings` table in that database).

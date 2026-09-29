@@ -1,0 +1,6 @@
+[
+  {"question": "Tell me about human rights in Germany.", "expected_files": ["Human_rights_in_Germany.txt"]},
+  {"question": "What is the Universal Declaration of Human Rights?", "expected_files": ["Universal_Declaration_of_Human_Rights.txt"]},
+  {"question": "What does the Convention on the Rights of the Child say?", "expected_files": ["Convention_on_the_Rights_of_the_Child.txt"]},
+  {"question": "What is the European Court of Human Rights?", "expected_files": ["European_Court_of_Human_Rights.txt"]}
+]

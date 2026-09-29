@@ -49,3 +49,15 @@ def test_format_context_and_prompt():
 def test_clean_answer_strips_think_block():
     assert clean_answer("<think>\nhmm\n</think>\n\nYes.") == "Yes."
     assert clean_answer("Yes.") == "Yes."
+
+
+def test_retrieval_metrics():
+    from eval_retrieval import rank_of_first_hit, summarize, unique_files
+
+    assert rank_of_first_hit(["x", "a", "b"], {"b", "a"}) == 2
+    assert rank_of_first_hit(["x"], {"a"}) is None
+    s = summarize([1, 3, None, 7], k=5)
+    assert s["questions"] == 4 and s["hit_at_k"] == 0.5 and abs(s["mrr"] - (1 + 1 / 3) / 4) < 1e-9
+    assert summarize([], 5)["questions"] == 0
+    Row2 = namedtuple("Row2", "file_name")
+    assert unique_files([Row2("a"), Row2("b"), Row2("a")]) == ["a", "b"]
