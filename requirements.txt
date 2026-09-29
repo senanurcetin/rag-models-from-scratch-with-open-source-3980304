@@ -1,0 +1,10 @@
+ollama>=0.5.0
+sentence-transformers>=3.0.0
+nltk
+SQLAlchemy>=2.0
+pgvector
+psycopg2-binary
+wikipedia
+docling
+accelerate
+pytest

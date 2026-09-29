@@ -5,21 +5,21 @@ import wikipedia
 def sanitize_filename(input_string):
     return re.sub(r'[^a-zA-Z0-9]', '_', input_string)
 
-def generate_corpus(search_term="human rights", num_articles=1000, output_dir="all_articles"):
+# The Wikipedia search API returns at most 500 results per request.
+def generate_corpus(search_term="human rights", num_articles=500, output_dir="all_articles"):
 
     # Generate a corpus of Wikipedia articles and save them as text files.
 
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
     
-    articles = []
+    saved = 0
     search_results = wikipedia.search(search_term, results=num_articles)
     
     for i, title in enumerate(search_results, 1):
         try:
             # Get the page content
             page = wikipedia.page(title, auto_suggest=False)
-            articles.append((title, page.content))
             
             # Save to file
             sanitized = sanitize_filename(title)
@@ -28,12 +28,13 @@ def generate_corpus(search_term="human rights", num_articles=1000, output_dir="a
             
             with open(filepath, 'w', encoding='utf-8') as f:
                 f.write(page.content)
+            saved += 1
                 
         except Exception as e:
             print(f"Error processing '{title}': {str(e)}")
             continue
     
-    print(f"\nCompleted! Saved {len(articles)} articles!")
+    print(f"\nCompleted! Saved {saved} articles!")
 
 if __name__ == "__main__":
     generate_corpus()
